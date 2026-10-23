@@ -291,6 +291,24 @@ the property and an `IniFile` component. Advantages:
   used a fixed default path), and `AUTOUPDATE` is `Secure`, so it is also passed
   through for per-machine installations.
 
+### Verification in the fork
+The workflow was run in the public fork `duichwer/quba-viewer` with throwaway
+version commits pushed only as fork tags (`v1.5.2-ci.1`, `v1.5.2-ci.2`, `v1.9.0`,
+`v1.9.1`); one run takes about 6 minutes.
+* The first run showed that `latest.yml` referenced `Quba-Setup-X.exe` while GitHub
+  stored the asset as `Quba.Setup.X.exe` (spaces become dots), so Windows updates
+  would fail with 404. The same mismatch exists in older upstream releases. Fixed by
+  `artifactName` without spaces; the release job now checks every `latest*.yml` URL.
+* MSI 1.9.0, `msiexec /i Quba-1.9.0.msi AUTOUPDATE=false APPLICATIONFOLDER=<custom dir> /qn`:
+  installs, writes `[AutoUpdate] performOnStartup=false` to `<custom dir>\AppConfig.ini`,
+  uninstalls cleanly.
+* Auto update on Windows: NSIS 1.9.0 installed silently (`/S`), 1.9.1 published in the
+  fork. On start 1.9.0 downloaded `Quba-Setup-1.9.1.exe` to `%LOCALAPPDATA%\quba-updater`,
+  after quitting the app 1.9.1 was installed (uninstall entry and `Quba.exe` version 1.9.1).
+* For fork builds the workflow points `build.publish` to the fork
+  (`npm pkg set build.publish[0].owner=…`), so installers from a fork never update from
+  upstream and vice versa.
+
 ### Risks and limits
 * `macos-latest` is arm64; the universal build combines x64 and arm64 there.
 * 2.0.0 was released outside this pipeline. The first pipeline release should be
