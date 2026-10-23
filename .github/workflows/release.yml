@@ -38,7 +38,10 @@ jobs:
               exit 1
             fi
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            case "$VERSION" in
+              *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+              *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+            esac
           else
             echo "tag=v$VERSION-ci.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
