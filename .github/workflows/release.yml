@@ -1,0 +1,148 @@
+name: Build and release
+
+# Tag push vX.Y.Z  -> build all platforms, create a draft release vX.Y.Z
+# Manual run       -> build all platforms, create a draft pre-release vX.Y.Z-ci.<run>
+# Pull request     -> build all platforms only (no release)
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $VERSION (expected v$VERSION)"
+              exit 1
+            fi
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v$VERSION-ci.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            targets: --win nsis msi --x64
+          - os: macos-latest
+            platform: mac
+            targets: --mac dmg zip --universal
+          - os: ubuntu-latest
+            platform: linux
+            targets: --linux AppImage --x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # Custom WiX template (install scope dialog), see doc/development.md
+      - name: Patch MSI template
+        if: matrix.platform == 'win'
+        shell: bash
+        run: cp doc/template.xml node_modules/app-builder-lib/templates/msi/template.xml
+
+      - name: Build renderer
+        run: npx vue-cli-service build
+
+      - name: Build installers
+        shell: bash
+        env:
+          # macOS signing/notarization, used only if the secrets exist
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          EXTRA=""
+          if [ "${{ matrix.platform }}" = "mac" ] && [ -z "$CSC_LINK" ]; then
+            echo "::warning::No macOS signing certificate configured, building unsigned"
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            EXTRA="-c.mac.identity=null -c.mac.notarize=false"
+          fi
+          npx electron-builder ${{ matrix.targets }} --publish never $EXTRA
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quba-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.msi
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.blockmap
+            release/latest*.yml
+
+  release:
+    needs: [prepare, build]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Check update metadata
+        working-directory: dist
+        run: |
+          ls -la
+          for f in latest.yml latest-mac.yml latest-linux.yml; do
+            test -f "$f" || { echo "::error::$f missing"; exit 1; }
+          done
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Create or update draft release
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" * --clobber
+          else
+            FLAGS="--draft --generate-notes --target $GITHUB_SHA"
+            [ "$PRERELEASE" = "true" ] && FLAGS="$FLAGS --prerelease"
+            gh release create "$TAG" * --title "${TAG#v}" $FLAGS
+          fi
