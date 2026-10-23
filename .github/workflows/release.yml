@@ -27,7 +27,7 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: v
         run: |
           VERSION=$(node -p "require('./package.json').version")
@@ -64,9 +64,9 @@ jobs:
             targets: --linux AppImage --x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -100,7 +100,7 @@ jobs:
           fi
           npx electron-builder ${{ matrix.targets }} --publish never $EXTRA
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: quba-${{ matrix.platform }}
           if-no-files-found: error
@@ -120,7 +120,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -132,6 +132,11 @@ jobs:
           for f in latest.yml latest-mac.yml latest-linux.yml; do
             test -f "$f" || { echo "::error::$f missing"; exit 1; }
           done
+          # GitHub replaces spaces in asset names, which breaks the URLs in latest*.yml
+          for f in $(grep -h 'url:' latest*.yml | awk '{print $NF}' | sort -u); do
+            test -f "$f" || { echo "::error::$f referenced in latest*.yml but not built"; exit 1; }
+          done
+          if ls | grep -q ' '; then echo "::error::asset names must not contain spaces"; exit 1; fi
           sha256sum * > SHA256SUMS.txt
 
       - name: Create or update draft release

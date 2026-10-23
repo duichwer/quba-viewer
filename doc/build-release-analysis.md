@@ -178,6 +178,109 @@ flowchart LR
 4. Build-time XSLT compilation (idea 1 above).
 5. Signing, winget and Flathub automation; Flatpak runtime update (24.08, node20).
 
+Technical design
+-------------
+Implemented in [`.github/workflows/release.yml`](../.github/workflows/release.yml)
+(step 2 of the suggested order). Tested in the fork `duichwer/quba-viewer`.
+
+### Goals and non-goals
+* Goals: reproducible release from a Git tag, all platforms in one run, complete
+  update metadata, nothing published without a manual check, no change to the app
+  code or the electron-builder config in `package.json`.
+* Not yet: Windows signing, XSLT compilation at build time, winget/Flathub automation,
+  dependency updates. These are separate follow-up PRs.
+
+### Versioning and tags
+* `package.json` `version` is the single source of truth.
+* Release tag is `v` + version (`v2.0.1`). This is the old convention up to v1.5.1
+  and what electron-updater expects from the GitHub provider.
+* A version with a suffix (`2.1.0-beta.1`) becomes a GitHub pre-release.
+  electron-updater ignores pre-releases unless `autoUpdater.allowPrerelease` is set,
+  so beta builds do not reach normal users.
+
+### Triggers
+| Event | Build | Release |
+|---|---|---|
+| Push of tag `v*` | all platforms | draft release `<tag>`; fails if tag ≠ `v` + `package.json` version |
+| `workflow_dispatch` (Actions tab, needs the workflow on the default branch) | all platforms | draft pre-release `v<version>-ci.<run number>` |
+| Pull request | all platforms | none (build check only) |
+
+### Jobs
+```mermaid
+flowchart LR
+  P[prepare<br/>ubuntu] --> W[build win<br/>windows-latest]
+  P --> M[build mac<br/>macos-latest]
+  P --> L[build linux<br/>ubuntu-latest]
+  W & M & L --> R[release<br/>ubuntu, contents: write]
+```
+
+1. **prepare**: reads the version, checks the tag, computes release tag and
+   pre-release flag.
+2. **build** (matrix, `fail-fast: false`): `npm ci` → (Windows) copy
+   `doc/template.xml` into `app-builder-lib` → `vue-cli-service build` →
+   `electron-builder <targets> --publish never` → upload `release/*` as artifact.
+   electron-builder never talks to GitHub here; it only writes files.
+   Windows artifact names are set explicitly without spaces (`nsis.artifactName`,
+   `msi.artifactName`): the default `Quba Setup X.exe` is renamed by GitHub to
+   `Quba.Setup.X.exe`, while `latest.yml` refers to `Quba-Setup-X.exe`, so the
+   Windows update download returned 404 (seen in the first fork test run and in
+   the v1.4.2–v1.5.1 assets).
+
+   | Runner | Targets | Files |
+   |---|---|---|
+   | `windows-latest` | `nsis msi --x64` | `Quba-Setup-X.exe`, `.blockmap`, `Quba-X.msi`, `latest.yml` |
+   | `macos-latest` | `dmg zip --universal` | `Quba-X-universal.dmg`, `-mac.zip`, `.blockmap`s, `latest-mac.yml` |
+   | `ubuntu-latest` | `AppImage --x64` | `Quba-X.AppImage`, `latest-linux.yml` |
+
+   The zip on macOS is required because electron-updater (Squirrel.Mac) updates
+   from the zip, not the dmg. deb/rpm/snap are left out: deb/rpm need an author
+   e-mail and `rpmbuild`, snap needs `snapcraft`; they can be added later.
+3. **release**: downloads all artifacts, **fails if one of `latest.yml`,
+   `latest-mac.yml`, `latest-linux.yml` is missing, if a file referenced there was
+   not built, or if an asset name contains spaces**, writes `SHA256SUMS.txt`,
+   creates the draft release with `gh release create --draft --generate-notes`
+   (or replaces assets on re-run with `gh release upload --clobber`).
+   Only this job has `contents: write`; the build jobs run read-only.
+
+Collecting everything in one job (as Zettlr and marktext do) avoids the race when
+three electron-builder processes try to create the same GitHub release, and makes
+"missing `latest*.yml`" a build failure instead of a silent gap.
+
+### Secrets
+| Secret | Used for | Without it |
+|---|---|---|
+| `GITHUB_TOKEN` (automatic) | creating the draft release | – |
+| `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` | Developer ID certificate (base64 `.p12`) | unsigned dmg/zip, warning in the log; macOS auto-update does not work unsigned |
+| `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | notarization | not notarized |
+| later: SignPath or Azure Trusted Signing credentials | Windows signing (#124) | unsigned exe/msi (SmartScreen warning) |
+
+Secrets are not passed to workflows triggered from forks' pull requests, so PR
+builds are always unsigned.
+
+### Maintainer release process
+1. PR that bumps `version` in `package.json` (e.g. `2.0.1`), merge to `master`.
+2. `git tag v2.0.1 && git push origin v2.0.1`.
+3. Wait for the workflow (≈ 10–15 min), open the draft release, check the assets
+   and the generated notes, test an installer.
+4. Publish the release. From this moment electron-updater in installed versions
+   sees the new `latest*.yml`.
+
+### Costs
+GitHub-hosted runners (including macOS) are free and unlimited for public
+repositories, so neither `ZUGFeRD/quba-viewer` nor a public fork pays anything.
+Private repositories get a monthly quota of free minutes (2 000 on GitHub Free),
+macOS minutes count ×10.
+See [About billing for GitHub Actions](https://docs.github.com/en/billing/managing-billing-for-your-products/managing-billing-for-github-actions/about-billing-for-github-actions).
+Artifacts are kept 90 days by default.
+
+### Risks and limits
+* The MSI template patch depends on the internal path
+  `node_modules/app-builder-lib/templates/msi/template.xml`; it breaks if
+  electron-builder moves it. The step fails loudly in that case.
+* `macos-latest` is arm64; the universal build combines x64 and arm64 there.
+* 2.0.0 was released outside this pipeline. The first pipeline release should be
+  2.0.1 (or later) from a `master` that contains the 2.0 code.
+
 Documentation
 -------------
 * electron-builder publish / GitHub releases: https://www.electron.build/docs/publish
