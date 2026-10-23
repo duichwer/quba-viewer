@@ -82,6 +82,11 @@ jobs:
       - name: Build renderer
         run: npx vue-cli-service build
 
+      # Builds in a fork look for updates in the fork (no-op in ZUGFeRD/quba-viewer)
+      - name: Point auto-update to this repository
+        shell: bash
+        run: npm pkg set "build.publish[0].owner=${GITHUB_REPOSITORY_OWNER}" "build.publish[0].repo=${GITHUB_REPOSITORY#*/}"
+
       - name: Build installers
         shell: bash
         env:
