@@ -73,6 +73,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Compile XSLT
+        run: npm run build:xslt
+
+      - name: Test XSLT transformations
+        run: npm run test:xslt
+
       - name: Build renderer
         run: npx vue-cli-service build
 
@@ -112,8 +118,35 @@ jobs:
             release/*.blockmap
             release/latest*.yml
 
+  # Offline build as on Flathub; checks that compiling the XSLT works there too
+  flatpak:
+    needs: prepare
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-23.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Regenerate npm sources from package-lock.json
+        run: |
+          pip install --quiet "git+https://github.com/flatpak/flatpak-builder-tools.git#subdirectory=node"
+          flatpak-node-generator npm package-lock.json -o flatpak/generated-sources.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-generated-sources
+          path: flatpak/generated-sources.json
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: flatpak/org.quba_viewer.Quba.yml
+          bundle: Quba-${{ needs.prepare.outputs.version }}.flatpak
+          artifact-name: quba-flatpak
+          cache-key: flatpak-${{ hashFiles('package-lock.json') }}
+
   release:
-    needs: [prepare, build]
+    needs: [prepare, build, flatpak]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -122,6 +155,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: dist
+          pattern: quba-*
           merge-multiple: true
 
       - name: Check update metadata
