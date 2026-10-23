@@ -68,15 +68,26 @@ When you then fire `window.api.sendMySig();` in Vue your app/main.js ipcMain wil
 XSLT/Saxon
 -------------
 Quba uses [saxon-js](https://www.saxonica.com/saxon-js/) as XSLT processor to apply
-some [available](https://github.com/itplr-kosit/xrechnung-visualization) XSLT style sheets which were previously
-converted to .sef.json files using the xslt3 utility.
+some [available](https://github.com/itplr-kosit/xrechnung-visualization) XSLT style sheets which are
+compiled to .sef.json files with the xslt3 utility at build time.
 
-```
-npm install --global xslt3
-xslt3 -xsl:cii-xr.xsl -export:cii-xr.sef.json -t
-xslt3 -xsl:xrechnung-html.uni.xsl -export:xrechnung-html.uni.sef.json -t
-```
-In MS Windows this only works using cmd.exe, the parameter notation for Powershell might be somewhat different. 
+Only the `.xsl` files are under version control. `npm start`, `npm run build` and
+`npm run dist` compile them first (`npm run build:xslt`, see `scripts/build-xslt.js`;
+only changed sources are recompiled, `-- --force` recompiles all).
+The mapping from source to compiled file is:
+
+| Source | Compiled |
+|---|---|
+| `cii-xr.xsl` | `cii-xr.sef.json` |
+| `cio-xr.xsl` | `cio-xr.sef.json` |
+| `ubl-invoice-xr.xsl` | `ubl-xr.sef.json` |
+| `ubl-creditnote-xr.xsl` | `ubl-creditnote-xr.sef.json` |
+| `xrechnung-html.uni.xsl` | `xrechnung-html.uni.sef.json` |
+| `ZUGFeRD_1p0_c1p0_s1p0.xslt` | `ZUGFeRD_1p0_c1p0_s1p0.sef.json` |
+
+`npm run test:xslt` runs the sample invoices in `000resources` through the stylesheets;
+`npm run test:xslt -- --compare <dir>` also compares the output with the `.sef.json`
+files in another directory, e.g. to check a stylesheet change for side effects.
 
 Since xrechnung-viewer.css and xrechnung-viewer.js are required via the XSLT file
 this will bypass the usual javascript loading routines, which is not an issue

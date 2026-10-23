@@ -5,12 +5,17 @@
   "author": "Quba",
   "scripts": {
     "serve": "vue-cli-service serve",
+    "build:xslt": "node scripts/build-xslt.js",
+    "test:xslt": "node scripts/test-xslt.js",
+    "prestart": "npm run build:xslt",
+    "prebuild": "npm run build:xslt",
+    "predist": "npm run build:xslt",
     "build": "vue-cli-service build && electron-builder build --win --publish never",
     "i18n:report": "vue-cli-service i18n:report --src \"./src/**/*.?(js|vue)\" --locales \"./src/locales/**/*.json\"",
     "pack": "npm run build && electron-builder build --publish=never",
     "start": "vue-cli-service build && electron .",
     "dist": "electron-builder",
-    "publish": "electron-builder build --win --publish always"
+    "publish": "npm run build:xslt && electron-builder build --win --publish always"
   },
   "main": "app/main.js",
   "dependencies": {
@@ -29,7 +34,7 @@
     "jsdom": "^23.0.1",
     "node-localstorage": "^2.2.1",
     "pdfjs-dist": "2.9.359",
-    "saxon-js": "2.4.0",
+    "saxon-js": "2.7.0",
     "vue": "3.2.36",
     "vue-i18n": "9.1.10",
     "vue-sweetalert2": "^5.0.5",
@@ -44,7 +49,8 @@
     "@vue/compiler-sfc": "3.2.36",
     "electron": "37.9.0",
     "electron-builder": "25.1.8",
-    "vue-cli-plugin-i18n": "2.3.1"
+    "vue-cli-plugin-i18n": "2.3.1",
+    "xslt3": "2.7.0"
   },
   "build": {
     "appId": "org.quba-viewer.viewer",
@@ -66,7 +72,8 @@
     "win": {
       "icon": "./assets/img/logo_small_icon_only.png",
       "target": [
-        "nsis","msi"
+        "nsis",
+        "msi"
       ]
     },
     "nsis": {

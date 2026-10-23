@@ -174,6 +174,6 @@ Known issues
 =============
 
   * While XRechnung, EN16931 and below should work, not all FX attributes/elements of the Extended Profile have yet been mapped, feel free to [report missing ones](https://github.com/ZUGFeRD/quba-viewer/issues) 
-  * conversion of XSLT to sef.json `xslt3 -xsl:ubl-creditnote-xr.xsl -export:ubl-creditnote-xr.sef.json -t` on windows works only in cmd.exe, not powershell
+  * the XSLT files are compiled to sef.json at build time (`npm run build:xslt`, see [doc/electron.md](doc/electron.md))
 
  
