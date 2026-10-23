@@ -48,6 +48,7 @@
   },
   "build": {
     "appId": "org.quba-viewer.viewer",
+    "msiProjectCreated": "./scripts/msi-project-created.js",
     "mac": {
       "identity": "Jochen Staerk (W92KCRC9LM)",
       "hardenedRuntime": true,
@@ -85,6 +86,7 @@
       "**/*",
       "dist/**/*",
       "!*.map",
+      "!scripts{,/**/*}",
       "!package.json",
       "!package-lock.json"
     ],

@@ -61,8 +61,9 @@ Assets of the last GitHub releases (`gh release view`):
 * `electron-updater` 5.0.1 together with `electron-builder` 25.1.8; the two should be
   updated together (current electron-builder major is 26/27).
 * Flatpak manifest uses runtime/BaseApp `23.08` and `node18`, both end of life.
-* `doc/template.xml` is copied into `node_modules` by hand to build the MSI.
-  This is lost on every `npm ci` and cannot work in CI without an extra step.
+* `doc/template.xml` was copied into `node_modules` by hand to build the MSI.
+  This is lost on every `npm ci` and cannot work in CI without an extra step
+  (replaced by a hook, see "MSI customisation").
 
 Related issues
 -------------
@@ -153,10 +154,9 @@ flowchart LR
 5. **macOS: `dmg` + `zip`.** electron-updater needs the zip for `latest-mac.yml`;
    universal build on a macOS runner. Secrets: `CSC_LINK`, `CSC_KEY_PASSWORD`,
    `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
-6. **Windows: NSIS + MSI in one run.** No more `package.json` edit. Replace the
-   manual `doc/template.xml` copy with a scripted step (e.g. `postinstall` or
-   [`patch-package`](https://github.com/ds300/patch-package)) or remove it if
-   current electron-builder MSI options are sufficient. Set `msi.upgradeCode` once.
+6. **Windows: NSIS + MSI in one run.** No more `package.json` edit. The manual
+   `doc/template.xml` copy is replaced by the electron-builder hook
+   `msiProjectCreated` (see "MSI customisation" below). Set `msi.upgradeCode` once.
    Note: MSI has no electron-updater support, NSIS remains the auto-update path.
    Options for #92, #95, #91: `nsis.perMachine`, `msi.perMachine`, `portable` target.
 7. **Signing (#124).** Options: [SignPath Foundation](https://signpath.org/)
@@ -216,8 +216,7 @@ flowchart LR
 
 1. **prepare**: reads the version, checks the tag, computes release tag and
    pre-release flag.
-2. **build** (matrix, `fail-fast: false`): `npm ci` → (Windows) copy
-   `doc/template.xml` into `app-builder-lib` → `vue-cli-service build` →
+2. **build** (matrix, `fail-fast: false`): `npm ci` → `vue-cli-service build` →
    `electron-builder <targets> --publish never` → upload `release/*` as artifact.
    electron-builder never talks to GitHub here; it only writes files.
    Windows artifact names are set explicitly without spaces (`nsis.artifactName`,
@@ -273,10 +272,26 @@ macOS minutes count ×10.
 See [About billing for GitHub Actions](https://docs.github.com/en/billing/managing-billing-for-your-products/managing-billing-for-github-actions/about-billing-for-github-actions).
 Artifacts are kept 90 days by default.
 
+### MSI customisation
+`doc/template.xml` was a full copy of electron-builder's internal WiX template that had
+to be copied into `node_modules` by hand. Compared with the bundled template of
+electron-builder 25.1.8 its only functional addition was the `AUTOUPDATE` property
+written to `AppConfig.ini` (read by `readInstallerConfigAndPerformAutoUpdate()` in
+`app/main.js`); everything else was whitespace.
+
+It is replaced by [`scripts/msi-project-created.js`](../scripts/msi-project-created.js),
+registered as `build.msiProjectCreated` in `package.json`. electron-builder calls this
+documented hook with the generated `project.wxs` before running WiX; the hook appends
+the property and an `IniFile` component. Advantages:
+* no file in `node_modules` is overwritten, `npm ci` and electron-builder updates keep working;
+* electron-builder's own template changes (fixes, new options) are no longer lost;
+* it depends only on the WiX ids `APPLICATIONFOLDER` and `ProductFeature` and stops
+  the build with a clear error if they disappear;
+* `AppConfig.ini` is written to the folder the user actually chose (the old template
+  used a fixed default path), and `AUTOUPDATE` is `Secure`, so it is also passed
+  through for per-machine installations.
+
 ### Risks and limits
-* The MSI template patch depends on the internal path
-  `node_modules/app-builder-lib/templates/msi/template.xml`; it breaks if
-  electron-builder moves it. The step fails loudly in that case.
 * `macos-latest` is arm64; the universal build combines x64 and arm64 there.
 * 2.0.0 was released outside this pipeline. The first pipeline release should be
   2.0.1 (or later) from a `master` that contains the 2.0 code.

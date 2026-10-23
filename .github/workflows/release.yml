@@ -73,12 +73,6 @@ jobs:
 
       - run: npm ci
 
-      # Custom WiX template (install scope dialog), see doc/development.md
-      - name: Patch MSI template
-        if: matrix.platform == 'win'
-        shell: bash
-        run: cp doc/template.xml node_modules/app-builder-lib/templates/msi/template.xml
-
       - name: Build renderer
         run: npx vue-cli-service build
 

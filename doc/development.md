@@ -70,10 +70,11 @@ $env:GH_TOKEN = '<private github access token>'
 npm run publish
 ```
 Actually only the Mac can build all three versions, there and on Linux use `export GH_TOKEN=<your token>`. 
-Also 
-```
-cp doc/template.xml node_modules/app-builder-lib/templates/msi
-```
+
+The MSI gets the public property `AUTOUPDATE` (default `true`), which is written to
+`AppConfig.ini` in the installation folder by the electron-builder hook
+`scripts/msi-project-created.js`. `msiexec /i Quba-X.Y.Z.msi AUTOUPDATE=false` disables
+the update check on startup.
 
 Since there is an error in the build please use `npm run build` afterwards to also create the
 autoupdate files `latest.yml`, `latest-mac.yml` and `latest-linux.yml` and upload them manually to
