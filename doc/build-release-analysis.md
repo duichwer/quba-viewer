@@ -291,6 +291,32 @@ the property and an `IniFile` component. Advantages:
   used a fixed default path), and `AUTOUPDATE` is `Secure`, so it is also passed
   through for per-machine installations.
 
+### Compiling XSLT at build time
+Implemented on top of the pipeline:
+* `xslt3` 2.7.0 is a devDependency; `saxon-js` is raised from 2.4.0 to the same 2.7.0.
+* [`scripts/build-xslt.js`](../scripts/build-xslt.js) (`npm run build:xslt`) compiles the
+  six stylesheets loaded by `app/main.js` (mapping in `doc/electron.md`). It only
+  recompiles when a `.xsl`/`.xslt` file, the script or `xslt3` changed, runs up to four
+  compilations in parallel (≈ 60 s for all instead of ≈ 150 s) and calls `xslt3` via
+  Node, so there is no cmd.exe/PowerShell difference any more.
+  `prestart`, `prebuild` and `predist` run it automatically.
+* All `.sef.json` files are removed from Git and ignored; `xr-mapping.sef.json` was not
+  used by the app and is dropped.
+* [`scripts/test-xslt.js`](../scripts/test-xslt.js) (`npm run test:xslt`) runs the sample
+  invoices from `000resources` through the same two-step chain as `app/main.js`
+  (20 samples × de/en/fr = 60 renderings). `--compare <dir>` diffs the output against
+  other `.sef.json` files. The workflow runs both scripts before packaging.
+* Result: the newly compiled files produce output identical to the previously committed
+  ones (60/60, both with saxon-js 2.4.0 and 2.7.0), and the files built in CI and shipped
+  in the 1.9.1 test installer are identical to locally built ones.
+* Gap: there are no CIO or ZUGFeRD 1 samples, so `cio-xr` and `ZUGFeRD_1p0_c1p0_s1p0`
+  are compiled but not rendered by the test.
+* Flatpak: `npm run dist` triggers `predist`, so the offline Flatpak build compiles too.
+  `flatpak/generated-sources.json` was stale (Electron 33 instead of 37, no `xslt3`);
+  the workflow now regenerates it from `package-lock.json` with `flatpak-node-generator`
+  and builds the Flatpak offline in the `freedesktop-23.08` container. That job is green;
+  the regenerated file is uploaded as an artifact so it can be committed or sent to Flathub.
+
 ### Verification in the fork
 The workflow was run in the public fork `duichwer/quba-viewer` with throwaway
 version commits pushed only as fork tags (`v1.5.2-ci.1`, `v1.5.2-ci.2`, `v1.9.0`,
@@ -336,5 +362,5 @@ Open questions for the maintainer
 -------------
 * How was 2.0.0 built (repository, tool chain), and should it be rebuilt from this repo?
 * Is a CI based release acceptable, and who owns the signing certificate?
-* Can `.sef.json` files be removed from Git, given the Flatpak build?
+* Can `.sef.json` files be removed from Git (implemented in the second step, Flatpak build verified)?
 * Should MSI stay a supported target in 2.0 (#174)?
